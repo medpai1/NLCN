@@ -1,29 +1,62 @@
-version: "3.10"
-
 services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: plateplan
+      POSTGRES_PASSWORD: plateplan
+      POSTGRES_DB: plateplan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - diet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plateplan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend Service (FastAPI)
+  backend:
+    build:
+      context: ./FastAPI_Backend
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - DATABASE_URL=postgresql://plateplan:plateplan@db:5432/plateplan
+      - SECRET_KEY=1a56a90f92e0a45b72cad8d07a6c1a4a
+      - DATASET_PATH=/app/backend/Data/dataset.csv
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://frontend:3000
+    volumes:
+      - ./Data:/app/backend/Data
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - diet-network
+
+  # Frontend Service (Next.js)
   frontend:
     build:
       context: .
-      dockerfile: Streamlit_Frontend/Dockerfile
-    image: frontend:latest
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8081
     ports:
-      - 8501:8501
-    networks:
-      - project_network
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
     depends_on:
       - backend
-    volumes:
-      - ./Streamlit_Frontend:/app/backend
-
-
-  backend:
-    build:
-      context: .
-      dockerfile: FastAPI_Backend/Dockerfile
-    image: backend:latest
-    ports:
-      - 8080:8080
     networks:
-      - project_network
+      - diet-network
+
+volumes:
+  postgres_data:
+
 networks:
-  project_network:
+  diet-network:
+    driver: bridge
